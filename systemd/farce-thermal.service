@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenFARCE: throughput-collapse detection for the MicroSD array
+Documentation=https://github.com/joshhickson/openfarce
+Requires=farce-assemble.service
+After=farce-assemble.service
+
+[Service]
+Type=simple
+Environment=FARCE_STATE_DIR=/etc/farce
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/openfarce
+ExecStart=/usr/bin/python3 -m farce.thermal --watch
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

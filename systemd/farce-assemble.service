@@ -1,0 +1,23 @@
+[Unit]
+Description=OpenFARCE: assemble the MicroSD array and enable it as swap
+Documentation=https://github.com/joshhickson/openfarce
+# USB enumeration is slow and staggered. Waiting for basic.target is not
+# enough; the readers are still appearing. assemble.sh does its own counting
+# and refuses a partial array, so a late start is safe and an early one is not.
+After=multi-user.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=FARCE_STATE_DIR=/etc/farce
+ExecStartPre=/bin/sleep 20
+ExecStart=/opt/openfarce/farce/assemble.sh
+ExecStop=/opt/openfarce/farce/assemble.sh --teardown
+TimeoutStartSec=600
+# A failed assembly must not wedge the boot. The array is not the root device
+# and the machine is more useful up than down.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

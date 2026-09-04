@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.json.bak
+/state/
+bench.json
+counter.json
+thermal.json
+endure-ledger.json
