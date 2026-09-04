@@ -8,28 +8,44 @@ build guide, and it is straight.
 
 ---
 
-## What you are building
+## Two rigs, and which one this is
 
-Forty MicroSD cards in forty USB readers, on four powered hubs, striped into a
-single RAID 0 span and enabled as Linux swap. A language model larger than host
-RAM is then paged onto it, and the resulting speed is measured.
+**The reference rig is eight lanes on a Raspberry Pi.** Eight 16 GB MicroSD
+cards in eight USB readers on one powered hub, striped into a RAID 0 span and
+enabled as Linux swap. 128 GB raw. About $70 of parts. This is the machine that
+gets built, and every measurement published by this project comes from it until
+something bigger exists.
 
-It will be slow. That is the measurement, not a failure.
+**The 40-lane array is a stretch goal**, not a prerequisite. It is the same
+procedure at five times the scale, and the differences are called out in
+"Scaling to forty" below. It costs roughly $900 and nobody has built one.
 
-## Parts
+Both page a language model larger than host RAM onto the array and measure the
+result. It will be slow. That is the measurement, not a failure.
+
+Every artifact the tools write carries the lane count it was measured on, so a
+number from one rig cannot be quoted as a number from the other. See
+`farce/rig.py`.
+
+## Parts — the reference rig
 
 | Qty | Item | Notes |
 |---:|---|---|
-| 40 | 32 GB MicroSD, UHS-I Class 10 | Any major brand. All forty the same model — mixed cards make the array as slow as the slowest and confuse the endurance ledger. |
-| 40 | USB 3.0 single-slot MicroSD reader | **Buy one first.** See "Readers that lie" below. |
-| 4 | 10-port powered USB 3.0 hub | Supply must be **12 V 4 A or better**. This is the part people get wrong. |
-| 4 | USB 3.0 cable | Type depends on the hub. |
-| 5 | 7×9 cm perfboard | The readers mount to these so the thing is one object and not a nest. |
-| 1 | Cable ties | You will use all of them. |
-| 1 | Linux host, ≥32 GB RAM | A spare desktop. Not your daily machine — it will thrash. |
-| 1 | PCIe USB 3.x card, ≥2 controllers | Optional. Strongly recommended; see "One controller" below. |
+| 1 | Raspberry Pi 4B | 8 GB strongly preferred. The 4 GB will work and swaps even on a 7B model. |
+| 1 | Official 5.1 V / 3 A USB-C supply | Not a phone charger. An undervolted Pi fails in ways that look like card faults. |
+| 1 | Boot MicroSD, ≥32 GB | **Not part of the array.** |
+| 1 | 7-port powered USB 3.0 hub | Must be self-powered. The Pi delivers about 1.2 A across all its USB ports; eight writing readers want roughly that alone. |
+| 8 | USB 3.0 single-slot MicroSD reader | All eight the same SKU. See "Readers that lie" below. |
+| 8 | 16 GB MicroSD, UHS-I Class 10/A1 | Mixed brands acceptable — RAID 0 uses the smallest member's size on all eight, so an old 32 GB card contributes 16 GB. Drawers first. |
+| 1 | USB 3.0 cable, hub to Pi | Usually supplied with the hub. |
+| 1 | 40 mm 5 V fan | Not optional under sustained write. See "Airflow". |
+| — | Printed blade and hub tray | Optional but tidy. `hardware/blade/`. |
 
-## Before you buy forty of anything
+The itemised, priced version is `campaign/reports/H-A2.1_RIG_SHOPPING_LIST.md`
+in the campaign repository, generated from the same parts file that prices the
+kits.
+
+## Before you buy eight of anything
 
 ### Readers that lie
 
@@ -50,16 +66,24 @@ buy a different reader.
 
 ### One controller
 
-Forty readers behind a single USB 3.0 controller share one 5 Gbps uplink. At
-that point you are measuring the controller, not the array, and every number
-you publish will be a statement about your motherboard.
+**On the Pi 4B this is not avoidable and you should design around it.** Both
+blue USB 3.0 ports hang off a single VL805 controller on a PCIe Gen 2 x1 link.
+The real-world ceiling for everything on both ports together is about 350 MB/s.
 
-Four hubs on two or more independent controllers is the minimum useful topology.
-Check what you have:
+Four UHS-I readers can saturate that. Eight cannot go faster — only wider. That
+is not a flaw in the rig; it is the measurement, and Lab 4 is built on it.
+
+Plug the hub into one USB 3.0 port and leave the other empty. A second hub on
+the other port shares the same ceiling and the same power budget, and buys
+nothing but confusion.
 
 ```bash
-lsusb -t          # look at the number of distinct Bus lines with 5000M
+lsusb -t          # one 5000M bus on a Pi 4B; more on a desktop
 ```
+
+On a desktop host building the 40-lane array, the same warning inverts: forty
+readers behind one controller means every number you publish is a statement
+about your motherboard. Use two or more independent controllers.
 
 ### Hub supplies
 
@@ -70,6 +94,19 @@ to start with a missing-slot message that looks like a software fault.
 
 If slots go missing under load and nothing else explains it, suspect the supply
 before anything else.
+
+### Airflow
+
+Eight readers in a row with no moving air throttle within minutes of sustained
+writing. A throttled card falls from around 104 MB/s to under 10, and because
+RAID 0 waits for its slowest member, one hot card stalls the whole array.
+
+A 40 mm 5 V fan off a spare hub port, blowing along the row, is enough. The
+printed blade has a mount for one and open lattice sides for the same reason.
+Do not put this in a box.
+
+If you skip the fan, say so when you publish numbers, because the numbers will
+be different and the difference is not small.
 
 ## Assembly
 
@@ -89,15 +126,16 @@ before anything else.
 sudo python3 -m farce.enumerate
 ```
 
-Expect forty lines. If you see fewer, the missing readers are a hardware problem
+Expect eight lines. If you see fewer, the missing readers are a hardware problem
 and no amount of software will fix them.
 
 ```bash
-sudo python3 -m farce.enumerate --expect 40    # writes /etc/farce/cards.json
+sudo python3 -m farce.enumerate --expect 8     # writes /etc/farce/cards.json
 sudo farce/assemble.sh                          # creates the array on first run
 ```
 
-`assemble.sh` will refuse to proceed with fewer than forty readers. This is
+`assemble.sh` will refuse to proceed with fewer than `FARCE_LANES` readers
+(default 8). This is
 deliberate: a RAID 0 span created across thirty-nine devices is a different
 array, and silently building it would invalidate every measurement afterwards.
 
@@ -127,7 +165,7 @@ journalctl -u farce-assemble -b | tail -20
 swapon --show
 ```
 
-You are looking for `40/40 readers present` and the array in `swapon --show`.
+You are looking for `8/8 readers present` and the array in `swapon --show`.
 
 ## Safety
 
@@ -140,7 +178,7 @@ Not optional reading. This rig runs unattended for months.
   a hot supply is a fire risk.
 - **Site it accordingly.** Hard surface, not carpet, not a bookshelf, not in a
   cupboard. It runs continuously and will be forgotten about.
-- **Smoke detector in the room.** This is a homebuilt array of forty flash
+- **Smoke detector in the room.** This is a homebuilt array of flash
   devices running at full duty cycle, continuously, for two months, with
   consumer power supplies. Treat it as you would a 3D printer.
 - **The array will die.** That is the experiment. Put nothing on it you want.
@@ -158,6 +196,29 @@ sudo farce/assemble.sh --create             # DESTROYS DATA, which is fine
 
 The endurance ledger keeps the dead card's accumulated wear under its old key,
 so the record of what it took to kill it survives the replacement.
+
+## Scaling to forty
+
+The 40-lane array is the same procedure with four differences, and it is a
+stretch goal rather than a plan:
+
+1. **Host.** A Pi cannot do it. Forty readers need a desktop with ≥32 GB RAM and
+   ideally a PCIe USB card exposing two or more independent controllers, so the
+   array is not one 5 Gbps uplink pretending to be forty lanes.
+2. **Hubs.** Four 10-port powered hubs, each with a **12 V 4 A or better**
+   supply. A ten-port hub sold with 2.5 A cannot feed ten active readers, and
+   the failure looks like missing slots rather than a power fault.
+3. **Staging.** `FARCE_STAGE_SIZE=8 FARCE_STAGE_DELAY=2` — forty readers
+   powering up together pulls more than any of those supplies will deliver.
+4. **Lane count.** `FARCE_LANES=40 FARCE_CARD_BYTES=32000000000`. Everything the
+   tools write then carries `lanes: 40`, and no file from the two rigs can be
+   confused for the other.
+
+Cards are 32 GB in the 40-lane build, matching the Developer Kit, so the array
+is 1.28 TB raw rather than 128 GB.
+
+Nobody has built this. Every figure the site publishes for a 40-lane array is
+the Feasibility Report's projection and is labelled as one.
 
 ## Publishing measurements
 

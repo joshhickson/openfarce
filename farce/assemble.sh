@@ -7,8 +7,8 @@
 #   1. Stage the power-up. Forty readers spinning up at once pulls more current
 #      than a hub's supply can deliver, and the failure mode is not a clean
 #      error: readers enumerate, then drop off the bus half a second later, and
-#      you spend a week thinking you have a driver problem. Eight at a time,
-#      two seconds apart, if uhubctl is available to gate the ports.
+#      you spend a week thinking you have a driver problem. Two at a time,
+#      one second apart, if uhubctl is available to gate the ports.
 #   2. Enumerate and refuse to proceed if any reader is missing, naming which.
 #   3. Assemble the RAID 0 span by UUID, never by kernel device name.
 #   4. Make it swap and enable it.
@@ -25,11 +25,16 @@ set -euo pipefail
 FARCE_ROOT="${FARCE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 STATE_DIR="${FARCE_STATE_DIR:-/etc/farce}"
 MD_DEV="${FARCE_MD_DEV:-/dev/md/farce0}"
-EXPECT="${FARCE_EXPECT_READERS:-40}"
+# The reference rig (Addendum A2) is eight lanes on a Raspberry Pi. The
+# Developer Kit array is forty. FARCE_EXPECT_READERS is kept as an alias so
+# anything written against the 40-lane assumption still works.
+EXPECT="${FARCE_LANES:-${FARCE_EXPECT_READERS:-8}}"
 CHUNK_KB="${FARCE_CHUNK_KB:-512}"
 SWAP_PRIORITY="${FARCE_SWAP_PRIORITY:-10}"
-STAGE_SIZE="${FARCE_STAGE_SIZE:-8}"
-STAGE_DELAY="${FARCE_STAGE_DELAY:-2}"
+# Two at a time on the Pi: one hub, and the Pi supplies only about 1.2 A
+# across all its USB ports even with the hub self-powered.
+STAGE_SIZE="${FARCE_STAGE_SIZE:-2}"
+STAGE_DELAY="${FARCE_STAGE_DELAY:-1}"
 
 log() { printf '[assemble] %s\n' "$*"; }
 die() { printf '[assemble] FATAL: %s\n' "$*" >&2; exit 1; }
@@ -91,6 +96,8 @@ from farce.enumerate import main; sys.exit(main())
   if [ "$found" -ne "$EXPECT" ]; then
     log "found ${found} readers with media, expected ${EXPECT}"
     log "refusing to assemble a partial array."
+    log "A rig with the wrong number of lanes is a different rig, and every"
+    log "measurement taken on it would be filed under the wrong lane count."
     log "Run 'python3 -m farce.enumerate --check' to see which slot is missing."
     exit 1
   fi

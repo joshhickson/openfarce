@@ -15,6 +15,8 @@
 #
 #   sudo ./serve.sh --model /srv/models/llama-70b-Q4_K_M.gguf
 #   sudo ./serve.sh --model MODEL --tokens 200 --json run.json
+#   sudo ./serve.sh --profile demo-fits  --model SMALL.gguf
+#   sudo ./serve.sh --profile demo-swaps --model LARGE.gguf --tokens 100
 #
 set -euo pipefail
 
@@ -28,6 +30,37 @@ TOKENS=128
 PROMPT="Explain what a write amplification factor is, in one paragraph."
 JSON_OUT=""
 THREADS="$(nproc 2>/dev/null || echo 4)"
+PROFILE=""
+
+# Addendum A2.7. Two named runs, because the pair is the demonstration: the
+# same machine, the same script, one model that fits in RAM and one that does
+# not. The array is only involved in the second, and the difference between the
+# two token rates is the entire claim this project makes.
+#
+#   demo-fits   a model that fits in host RAM. The array is idle. This is the
+#               control, and it is the "before" shot in the video.
+#   demo-swaps  a model larger than host RAM, paging from the array. This is
+#               the product working as designed, and it is very slow.
+#
+# Neither profile supplies a model; models are large and are not ours to fetch.
+apply_profile() {
+  case "$1" in
+    demo-fits)
+      : "${TOKENS:=128}"
+      SWAPPINESS_TARGET=10
+      log "profile demo-fits: model should fit in RAM; the array should stay idle"
+      log "  if this profile swaps, the model is too big and the run is not a control"
+      ;;
+    demo-swaps)
+      TOKENS="${TOKENS}"
+      SWAPPINESS_TARGET=100
+      log "profile demo-swaps: model should exceed host RAM and page from the array"
+      log "  expect seconds per token, not tokens per second"
+      ;;
+    "") SWAPPINESS_TARGET=100 ;;
+    *)  die "unknown profile: $1 (demo-fits | demo-swaps)" ;;
+  esac
+}
 
 log() { printf '[serve] %s\n' "$*"; }
 die() { printf '[serve] FATAL: %s\n' "$*" >&2; exit 1; }
@@ -39,9 +72,12 @@ while [ $# -gt 0 ]; do
     --prompt)  PROMPT="$2"; shift 2 ;;
     --json)    JSON_OUT="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
+    --profile) PROFILE="$2"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
+
+apply_profile "$PROFILE"
 
 [ -n "$MODEL" ] || die "--model is required"
 [ -f "$MODEL" ] || die "model not found: $MODEL"
@@ -71,7 +107,7 @@ fi
 # Swap harder than the default. Without this the kernel prefers to reclaim page
 # cache and the array sits idle while the run thrashes the model file instead.
 OLD_SWAPPINESS="$(cat /proc/sys/vm/swappiness)"
-echo 100 > /proc/sys/vm/swappiness
+echo "${SWAPPINESS_TARGET:-100}" > /proc/sys/vm/swappiness
 restore() { echo "$OLD_SWAPPINESS" > /proc/sys/vm/swappiness 2>/dev/null || true; }
 trap restore EXIT
 

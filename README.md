@@ -1,24 +1,32 @@
 # OpenFARCE
 
-Tooling for a forty-slot MicroSD array used as swap-backed block storage.
+Tooling for a MicroSD array used as swap-backed block storage. Eight lanes on a
+Raspberry Pi by default; forty is the same code with a different lane count.
 
 **Status: pre-alpha.** Nothing here is finished, there is no release, and it is
 not included in any F.A.R.C.E. Flash kit. The reference rig it is written for
-has not been built yet, so no measurement in this repository has been taken
-from real hardware.
+has not been built yet, so **no measurement in this repository has been taken
+from real hardware.** The code runs; it has never met a MicroSD card.
 
 ---
 
 ## What this is
 
-Forty consumer MicroSD cards, striped into a RAID 0 span, handed to the Linux
-kernel as swap. A model larger than host RAM is then paged onto it.
+Consumer MicroSD cards in USB readers, striped into a RAID 0 span, handed to the
+Linux kernel as swap. A model larger than host RAM is then paged onto it.
 
 That is the entire architecture. There is no custom driver, no kernel module,
 and no clever I/O layer — the kernel does the paging and the array is a block
 device it pages onto. What is here is the operational tooling around that:
-bringing forty readers up reliably, measuring what they actually do, and
-keeping an honest ledger of how fast the media is wearing out.
+bringing the readers up reliably, measuring what they actually do, and keeping
+an honest ledger of how fast the media is wearing out.
+
+**Two rigs.** The **reference rig** is eight 16 GB cards on a Raspberry Pi 4B,
+128 GB raw, about $70 of parts — this is the one that gets built. The **40-lane
+array** is 32 GB cards on a desktop host, 1.28 TB raw, and is a campaign stretch
+goal nobody has built. They are different machines, and every file the tools
+write carries the lane count it came from (`farce/rig.py`) so a number from one
+cannot be quoted as a number from the other.
 
 ## What it is not
 

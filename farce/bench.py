@@ -43,6 +43,7 @@ import sys
 import time
 from pathlib import Path
 
+from farce import rig
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from farce import enumerate as farce_enum  # noqa: E402
 
@@ -123,6 +124,64 @@ def bench_target(target: str, profiles: list[str], runtime: int, size: str,
     return result
 
 
+def baseline_targets() -> dict:
+    """Devices worth comparing the array against, if this machine has them.
+
+    Addendum A2.3.1 says plainly that a $25 USB SSD beats this array at
+    everything except sequential read, where both hit the same USB controller
+    ceiling. That claim is on the disclaimer, so it should be measured on the
+    same machine on the same afternoon rather than quoted from a spec sheet.
+
+    Returns {label: device path}. Missing devices are simply absent.
+    """
+    found = {}
+
+    # The Pi's own SD slot. mmcblk0 is the boot card on a Raspberry Pi; it is
+    # not part of the array and benchmarking it is read-only here.
+    for dev in ("/dev/mmcblk0", "/dev/mmcblk1"):
+        if os.path.exists(dev):
+            found["pi_sd_slot"] = dev
+            break
+
+    # A USB SSD, if one is plugged in. Identified by being a non-removable
+    # USB block device large enough not to be a card reader.
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["lsblk", "-dnpo", "NAME,TRAN,RM,SIZE,MODEL"],
+            capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    for line in out.splitlines():
+        parts = line.split(None, 4)
+        if len(parts) < 4:
+            continue
+        name, tran, removable, size = parts[0], parts[1], parts[2], parts[3]
+        if tran == "usb" and removable == "0" and size.endswith(("G", "T")):
+            found["usb_ssd"] = name
+            break
+
+    return found
+
+
+def baselines(args) -> dict:
+    """Benchmark the comparison devices. Read profiles only — these are not ours
+    to destroy, and the boot card in particular is holding the operating system."""
+    targets = baseline_targets()
+    if not targets:
+        return {"note": "no baseline devices found on this host"}
+
+    safe = [p for p in PROFILES if not PROFILES[p]["destructive"]]
+    out = {"note": ("Read profiles only. Baselines are measured read-only: one "
+                    "of these devices is usually the boot card.")}
+    for label, dev in targets.items():
+        print("baseline: %s (%s)" % (label, dev))
+        out[label] = {"device": dev,
+                      "results": bench_target(dev, safe, args.runtime,
+                                              args.size, False, args.dry_run)}
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--array", action="store_true", help="benchmark the assembled array")
@@ -132,6 +191,9 @@ def main() -> int:
                     help="enable the destructive write profiles")
     ap.add_argument("--runtime", type=int, default=30, help="seconds per profile")
     ap.add_argument("--size", default="4G", help="fio --size")
+    ap.add_argument("--baseline", action="store_true",
+                    help="also benchmark the Pi's own SD slot and any USB SSD, "
+                         "so the comparison in the report is measured, not quoted")
     ap.add_argument("--dry-run", action="store_true", help="print fio commands only")
     ap.add_argument("-o", "--output", default=None, help="write JSON here")
     args = ap.parse_args()
@@ -189,6 +251,8 @@ def main() -> int:
                         report["aggregate"][profile]["scaling_efficiency"] = round(
                             measured / sum(vals), 3)
 
+    report["rig"] = rig.stamp()
+    report["baselines"] = baselines(args) if args.baseline else None
     report["finished"] = int(time.time())
 
     if args.dry_run:

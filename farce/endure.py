@@ -44,6 +44,7 @@ import sys
 import time
 from pathlib import Path
 
+from farce import rig
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from farce import enumerate as farce_enum  # noqa: E402
 
@@ -143,6 +144,7 @@ def project(ledger: dict, waf: float, pe_cycles: int) -> dict:
         "estimated_physical_tb_written": round(physical / 1e12, 4),
         "array_capacity_tb": round(capacity / 1e12, 4),
         "throttle_events": ledger.get("throttle_events", 0),
+        "rig": rig.stamp(),
         "assumptions": {
             "waf": waf,
             "waf_note": ("Write amplification cannot be observed from the host. "
@@ -169,6 +171,9 @@ def main() -> int:
     ap.add_argument("--status", action="store_true", help="print current state and exit")
     ap.add_argument("--waf", type=float, default=DEFAULT_WAF)
     ap.add_argument("--pe-cycles", type=int, default=DEFAULT_PE_CYCLES)
+    ap.add_argument("--card-bytes", type=int, default=None,
+                    help="nominal bytes per card; overrides FARCE_CARD_BYTES. "
+                         "The reference rig is 16 GB, the Developer Kit 32 GB.")
     ap.add_argument("--interval", type=int, default=SAMPLE_INTERVAL)
     ap.add_argument("--reset", action="store_true", help="discard the ledger and restart")
     args = ap.parse_args()

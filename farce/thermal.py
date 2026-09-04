@@ -30,6 +30,7 @@ import time
 from collections import defaultdict, deque
 from pathlib import Path
 
+from farce import rig
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from farce import enumerate as farce_enum  # noqa: E402
 from farce.endure import sectors_written  # noqa: E402
@@ -132,6 +133,7 @@ def main() -> int:
         try:
             STATE_DIR.mkdir(parents=True, exist_ok=True)
             THERMAL_JSON.write_text(json.dumps({
+                "rig": rig.stamp(),
                 "schema": "farce-thermal/1",
                 "updated": int(now),
                 "method": ("throughput-collapse detection; MicroSD exposes no "
