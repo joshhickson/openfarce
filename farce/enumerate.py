@@ -8,7 +8,7 @@ in a different order. Nothing in this project may depend on them.
 
 Instead each reader is identified by the pair
 
-    (usb_path, serial)
+    (usb_path, lun, serial)
 
 where usb_path is the physical topology — which port on which hub on which
 controller — and serial is whatever the reader reports. Either alone is
@@ -71,6 +71,29 @@ def _usb_path(dev: str) -> str | None:
     return None
 
 
+def _scsi_addr(dev: str) -> str | None:
+    """SCSI address of a block device, e.g. '6:0:0:3' (host:channel:target:lun).
+
+    A multi-LUN card reader — the way essentially every commercial multi-slot
+    reader is built — puts all of its slots behind ONE USB interface. They share
+    a usb_path and differ only by the LUN at the end of this address, so without
+    it every card in such a reader has the same identity and the tools cannot
+    tell slot 1 from slot 5.
+
+    Eight separate readers on a hub do not need this; a GL3223-class reader
+    cannot work without it.
+    """
+    try:
+        real = (SYS_BLOCK / dev).resolve()
+    except OSError:
+        return None
+    # .../2-1.4.3:1.0/host6/target6:0:0/6:0:0:3/block/sde
+    for part in reversed(real.parts):
+        if re.fullmatch(r"\d+:\d+:\d+:\d+", part):
+            return part
+    return None
+
+
 def discover() -> list[dict]:
     """Every removable USB block device currently attached."""
     cards = []
@@ -101,6 +124,7 @@ def discover() -> list[dict]:
         cards.append({
             "dev": dev,
             "usb_path": _usb_path(dev),
+            "scsi_addr": _scsi_addr(dev),
             "serial": props.get("ID_SERIAL_SHORT") or props.get("ID_SERIAL") or "",
             "model": props.get("ID_MODEL", "").replace("_", " ").strip(),
             "vendor": props.get("ID_VENDOR", "").replace("_", " ").strip(),
@@ -111,8 +135,22 @@ def discover() -> list[dict]:
 
 
 def key_of(card: dict) -> str:
-    """Stable identity. Never the kernel name."""
-    return "%s|%s" % (card.get("usb_path") or "nopath", card.get("serial") or "noserial")
+    """Stable identity. Never the kernel name.
+
+    Three parts, because no two of them are sufficient:
+      usb_path   which port on which hub — but shared by every slot of a
+                 multi-LUN reader
+      scsi_addr  the LUN, which separates those slots — but its host number
+                 is assigned in probe order and is not stable across boots
+      serial     often identical across cheap readers from one batch
+
+    Together they identify a slot on any of the reader topologies this project
+    uses. Only the LUN field of scsi_addr is stable, so that is the part used.
+    """
+    lun = (card.get("scsi_addr") or "").rsplit(":", 1)[-1] or "nolun"
+    return "%s|%s|%s" % (card.get("usb_path") or "nopath",
+                         lun,
+                         card.get("serial") or "noserial")
 
 
 def duplicate_serials(cards: list[dict]) -> dict[str, int]:
